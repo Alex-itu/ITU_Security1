@@ -83,7 +83,7 @@ def modifyMessage(message):
     c1, c2 = message
     
     #c2 is the message wearing a mask, so modifing the mask will change the message
-    # this is called a malleability attack. normaly you wouldnt know what is in the message before hand.
+    # this is called a malleability attack. Normaly you wouldnt know what is in the message before hand.
     # But even with knowning the message, it is still the same aprouch.
     return (c1, (c2*3))
     
