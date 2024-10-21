@@ -7,11 +7,14 @@ import (
 )
 
 const (
-  port         = ":8443"
-  responseBody = "Hello, TLS!"
+  hos_port = ":8443"
+  responseBody = "Thanks for joining the protocol"
+  maxClients = 3
 )
 
-func main() {
+var numClients = 0
+
+func hospitalSetup() (*http.Server, error) {
   cert, err := tls.LoadX509KeyPair("server.crt", "server.key")
   if err != nil {
     log.Fatalf("Failed to load X509 key pair: %v", err)
@@ -23,21 +26,37 @@ func main() {
 
   router := http.NewServeMux()
   router.HandleFunc("/", handleRequest)
+  router.HandleFunc("/j", handleRequest2)
 
-  server := &http.Server{
-    Addr:      port,
+  hospital := &http.Server{
+    Addr:      hos_port,
     Handler:   router,
     TLSConfig: config,
   }
 
-  log.Printf("Listening on %s...", port)
-  err = server.ListenAndServeTLS("", "")
+  return hospital, err
+}
+
+func main() {
+  log.Printf("Listening on %s...", hos_port)
+
+  // Does the Setup for starting a server
+  hospital, err := hospitalSetup()
+
+  // This makes sure to keep listing for requests
+  err = hospital.ListenAndServeTLS("", "")
   if err != nil {
     log.Fatalf("Failed to start server: %v", err)
   }
+
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) {
   w.WriteHeader(http.StatusOK)
   w.Write([]byte(responseBody))
+}
+
+func handleRequest2(w http.ResponseWriter, r *http.Request) {
+  w.WriteHeader(http.StatusOK)
+  w.Write([]byte("yoyo"))
 }
