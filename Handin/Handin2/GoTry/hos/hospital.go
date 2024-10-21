@@ -8,7 +8,7 @@ import (
 
 const (
   hos_port = ":8443"
-  responseBody = "Thanks for joining the protocol"
+  responseBody = "Thanks for joining the protocol, please send your port"
   maxClients = 3
 )
 
@@ -25,7 +25,7 @@ func hospitalSetup() (*http.Server, error) {
   }
 
   router := http.NewServeMux()
-  router.HandleFunc("/", handleRequest)
+  router.HandleFunc("/", connectionEstablished)
   router.HandleFunc("/j", handleRequest2)
 
   hospital := &http.Server{
@@ -51,7 +51,7 @@ func main() {
 
 }
 
-func handleRequest(w http.ResponseWriter, r *http.Request) {
+func connectionEstablished(w http.ResponseWriter, r *http.Request) {
   w.WriteHeader(http.StatusOK)
   w.Write([]byte(responseBody))
 }

@@ -1,16 +1,23 @@
 package main
 
 import (
-  "crypto/tls"
-  "crypto/x509"
-  "io"
-  "log"
-  "net/http"
-  "os"
-  "time"
+	"bytes"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"time"
 )
 
-var client_port = ""
+
+type clientInfo struct {
+	Port int
+}
+ var client_port = ""
 
 const (
   // by changing the the ending, can you make it posiable to reach different request handlers
@@ -34,7 +41,7 @@ func clientSetup() (*http.Server, error) {
   router.HandleFunc("/", handleRequest)
 
   hospital := &http.Server{
-    Addr:      client_port,
+    Addr:      ":" + client_port,
     Handler:   router,
     TLSConfig: config,
   }
@@ -49,9 +56,15 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 
 func main() {
-  go connection()
   
-  client_port = ":" + "8445"
+  client_port = "8445"
+  
+  // Does the Setup for starting a server
+  client, err := clientSetup()
+  
+  
+  // Starts a connection to the hospital to see if can response 
+  connection()
 
 
   // Keep the main function alive
@@ -87,7 +100,7 @@ func connection() {
   }
 
 
-  // Get them GETs 
+  
   for {
     time.Sleep(1 * time.Second) // Retry after a delay 
    
@@ -98,7 +111,30 @@ func connection() {
     }
 
     responseHandler(resp)
+
+    postPortToHospital(client)
+   
   }
+}
+
+func postPortToHospital(client *http.Client) {
+  i, err := strconv.Atoi(client_port)
+  if err != nil {
+      // ... handle error
+      panic(err)
+  }
+
+  clientin := clientInfo {
+    Port: i,
+  }
+
+  bodyBytes, err := json.Marshal(&clientin)
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  bodyReader := bytes.NewReader(bodyBytes)
+  resp1, err := client.Post((url + "/j"), "string", bodyReader)
 }
 
 func responseHandler(resp *http.Response) {
