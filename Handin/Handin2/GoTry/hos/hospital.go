@@ -8,7 +8,6 @@ import (
 
 const (
   hos_port = ":8443"
-  responseBody = "Thanks for joining the protocol, please send your port"
   maxClients = 3
 )
 
@@ -25,8 +24,12 @@ func hospitalSetup() (*http.Server, error) {
   }
 
   router := http.NewServeMux()
+
+  // these are all "listning" for request
+  // different endpoint does different things
   router.HandleFunc("/", connectionEstablished)
-  router.HandleFunc("/j", handleRequest2)
+  router.HandleFunc("/ClientPortPost", handleRequest2)
+  router.HandleFunc("/SendShares", handleRequest2)
 
   hospital := &http.Server{
     Addr:      hos_port,
@@ -53,9 +56,11 @@ func main() {
 
 func connectionEstablished(w http.ResponseWriter, r *http.Request) {
   w.WriteHeader(http.StatusOK)
-  w.Write([]byte(responseBody))
+  w.Write([]byte("Thanks for joining the protocol, please send your port"))
 }
 
+
+// TODO: Take client's port and save it
 func handleRequest2(w http.ResponseWriter, r *http.Request) {
   w.WriteHeader(http.StatusOK)
   w.Write([]byte("yoyo"))
