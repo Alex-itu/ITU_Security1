@@ -9,13 +9,16 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
+	// "strconv"
 	//"time"
 )
 
+type OtherClientPorts struct {
+	Ports []string
+}
 
 type clientInfo struct {
-	Port int
+	Port string
 }
  var client_port = ""
 
@@ -40,7 +43,7 @@ func clientSetup() (*http.Server, error) {
   // these are all "listning" for request
   // different endpoint does different things
   router.HandleFunc("/", connectionEstablished)
-  router.HandleFunc("/GetClientsPorts", connectionEstablished)
+  router.HandleFunc("/GetClientsPorts", hospitalPostsAllPort)
   router.HandleFunc("/SendShares", connectionEstablished)
   
 
@@ -58,6 +61,30 @@ func connectionEstablished(w http.ResponseWriter, r *http.Request) {
   w.Write([]byte("Hey from client with port:" + client_port))
 }
 
+func hospitalPostsAllPort(w http.ResponseWriter, r *http.Request) {
+  w.WriteHeader(http.StatusOK)
+  ports := readClientPorts(r.Body)
+  log.Printf("Got Ports: %v", ports)
+}
+
+func readClientPorts(body io.ReadCloser) ([]string) {
+  // not sure why, but this has to &clientInfo else I non-pointer error in unmarshaling
+  ports := &OtherClientPorts{}
+
+  bodyBytes, err := io.ReadAll(body)
+  if err != nil {
+    log.Printf("Failed to read response body: %v", err)
+  }
+
+  // Takes the content of the request and puts it in clientIn
+  err = json.Unmarshal(bodyBytes, ports)
+  if err != nil {
+    log.Printf("Failed to Unmarshal: %v", err)
+  }
+  return ports.Ports
+}
+
+
 
 func main() {
   port := os.Args[1:]
@@ -67,26 +94,28 @@ func main() {
   } else {
     client_port = port[0]
   }
+  println("port: " + port[0])
   
   // Does the Setup for starting a server
   clientServer, err := clientSetup()
   if err != nil {
     panic("ClientServer failed")
   }
+  println("ClientServer up and running")
 
   // This makes sure to keep listing for requests
-  err = clientServer.ListenAndServeTLS("", "")
-  if err != nil {
-    log.Fatalf("Failed to start server: %v", err)
-  }
+  go listenAndServe(clientServer)
+  
 
   
   
   // Starts a connection to the hospital to see if can response 
-  clientCon, status :=connection()
+  clientCon, status := connection()
   if status != 200 {
     panic("Connection went wrong")
   }
+  println(status)
+
   // with the hospital alive and running send client's port to it
   postPortToHospital(clientCon)
   
@@ -94,6 +123,13 @@ func main() {
 
   // Keep the main function alive
   for {}
+}
+
+func listenAndServe(clientServer *http.Server) {
+  err := clientServer.ListenAndServeTLS("", "")
+  if err != nil {
+    log.Fatalf("Failed to start server: %v", err)
+  }
 }
 
 func connectionSetup() (*http.Client, error) {
@@ -143,17 +179,13 @@ func connection() (*http.Client, int) {
 
 // As the name says, gives the client's port to hospital
 func postPortToHospital(client *http.Client) {
-  i, err := strconv.Atoi(client_port)
-  if err != nil {
-      panic(err)
+  clientIn := clientInfo {
+    Port: client_port,
   }
-
-  clientin := clientInfo {
-    Port: i,
-  }
+  log.Printf("port: %v", clientIn)
 
   // Sadly, this is needed, you cant post without a body...
-  bodyBytes, err := json.Marshal(&clientin)
+  bodyBytes, err := json.Marshal(&clientIn)
   if err != nil {
     log.Fatal(err)
   }
