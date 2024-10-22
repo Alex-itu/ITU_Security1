@@ -9,8 +9,10 @@ import (
 	"log"
 	"net/http"
 	"os"
-	// "strconv"
-	//"time"
+  "math/rand"
+  "time"
+	"sync"
+	"strconv"
 )
 
 type OtherClientPorts struct {
@@ -20,7 +22,27 @@ type OtherClientPorts struct {
 type clientInfo struct {
 	Port string
 }
- var client_port = ""
+
+type clientShare struct {
+  Share int
+}
+var mutex sync.Mutex
+
+var client_port = ""
+
+var maxClients = 3
+
+var sharesFromClients []int
+
+var sec = 500
+var capForCom int
+var N int
+var ownMadeShares []int
+
+var data int
+var dataMax int
+
+var client *http.Client
 
 const (
   // by changing the the ending, can you make it possible to reach different request handlers
@@ -44,7 +66,7 @@ func clientSetup() (*http.Server, error) {
   // different endpoint does different things
   router.HandleFunc("/", connectionEstablished)
   router.HandleFunc("/GetClientsPorts", hospitalPostsAllPort)
-  router.HandleFunc("/SendShares", connectionEstablished)
+  router.HandleFunc("/SendShares", GetShareFromClients)
   
 
   clientServer := &http.Server{
@@ -62,9 +84,155 @@ func connectionEstablished(w http.ResponseWriter, r *http.Request) {
 }
 
 func hospitalPostsAllPort(w http.ResponseWriter, r *http.Request) {
-  w.WriteHeader(http.StatusOK)
   ports := readClientPorts(r.Body)
   log.Printf("Got Ports: %v", ports)
+  // time.Sleep(time.Second * 1)
+  
+  mutex.Lock()
+  ownMadeShares = makeShares(dataMax, data, maxClients)
+  mutex.Unlock()
+  // ownMadeShares = makeShares(capForCom, N, maxClients)
+  
+  // time.Sleep(time.Second * 1)
+  postShareToClient(ports)
+
+  
+  w.WriteHeader(http.StatusOK)
+  w.Write([]byte("" + client_port + " : Got all the ports"))
+}
+
+// func makeShares (secret, N, fieldSize int) ([]int) {
+//   var shares []int
+// 	var totalShares int
+
+// 	for i := 0; i < fieldSize-1; i++ {
+// 		share := rand.Intn(secret-1) + 1
+// 		shares = append(shares, share)
+// 		totalShares += share
+// 	}
+
+// 	shares = append(shares, N-totalShares)
+//   log.Println("make share check")
+// 	return shares
+// }
+
+func makeShares(p int, data int, amount int) []int {
+	log.Println("makeShares check")
+  var shares []int
+	var totalShares int
+
+	for i := 0; i < amount-1; i++ {
+		share := rand.Intn(p-1) + 1
+    log.Println("share nr " + strconv.Itoa(i) + ": " + strconv.Itoa(share))
+    shares = append(shares, share)
+		totalShares += share
+	}
+
+	shares = append(shares, data-totalShares)
+
+
+	return shares
+}
+
+func GetShareFromClients(w http.ResponseWriter, r *http.Request) {
+  mutex.Lock()
+  share := readSharePost(r.Body)
+  mutex.Unlock()
+  
+  log.Printf("Got share: %v", share)
+  
+  log.Println("sharesFromClients len : " + strconv.Itoa(len(sharesFromClients)))
+  
+  if len(ownMadeShares) != 0 && (maxClients-1) == len(sharesFromClients) {
+    postAggSharesToHos()
+  }
+
+  w.WriteHeader(http.StatusOK)
+}
+
+func readSharePost(body io.ReadCloser) (int) {
+  clientShare := &clientShare{}
+  // log.Println("read share check")
+
+  bodyBytes, err := io.ReadAll(body)
+  if err != nil {
+    log.Printf("Failed to read response body: %v", err)
+  }
+
+  // Takes the content of the request and puts it in clientIn
+  err = json.Unmarshal(bodyBytes, clientShare)
+  if err != nil {
+    log.Printf("Failed to Unmarshal: %v", err)
+  }
+
+  // just to make it easier, I add it to global var
+  log.Println("share from client : " + strconv.Itoa(clientShare.Share))
+  sharesFromClients = append(sharesFromClients, clientShare.Share)
+  
+
+  return clientShare.Share
+}
+
+func postShareToClient(ports []string) { 
+  // log.Println("post share check")
+  // log.Println("ownShare len : " + strconv.Itoa(len(ownShare)) )
+  // log.Println("ports len : " + strconv.Itoa(len(ports)))
+  
+  for index, share := range ownMadeShares {
+    if index == maxClients - 1 {
+      break
+    }
+    ownShare := clientShare{
+      Share: share,
+    }
+
+    b, err := json.Marshal(ownShare)
+    if err != nil {
+      panic("marshel wrong")
+    }
+    urlToClients := "https://localhost:"
+    // log.Println("posting to " + urlToClients + ports[index] + "/SendShares check")
+    // log.Println("ownShare share : " + strconv.Itoa(ownShare.share))
+    // log.Println("index : " + strconv.Itoa(index))
+    log.Println("share : " + strconv.Itoa(share))
+    resp, err := client.Post(urlToClients + ports[index] + "/SendShares", "string", bytes.NewReader(b))
+    if err != nil {
+      panic("response To " + ports[index] + " went wrong")
+    }
+    log.Println("post share " + strconv.Itoa(ownShare.Share) + " to: " + ports[index] + " code: " + resp.Status) 
+  }
+}
+
+func postAggSharesToHos() {
+  log.Println("postAggSharesToHos check")
+  log.Println("OwmMAdeShares len : " + strconv.Itoa(len(ownMadeShares)))
+  log.Println("OwmMAdeShares : " + strconv.Itoa(ownMadeShares[len(ownMadeShares)-1]))
+  
+  sharesFromClients = append(sharesFromClients, ownMadeShares[len(ownMadeShares)-1])
+  
+  var aggregateShare int
+
+	for _, share := range sharesFromClients {
+		aggregateShare = aggregateShare + share
+	}
+
+	log.Println("aggregate share is " + strconv.Itoa(aggregateShare))
+
+	aggregate := clientShare{
+		Share: aggregateShare,
+	}
+
+	b, err := json.Marshal(aggregate)
+	if err != nil {
+		panic("marshal wrong")
+	}
+
+	// url := fmt.Sprintf("https://localhost:%d/shares", hospitalPort)
+	resp, err := client.Post(url + "/GetShares", "string", bytes.NewReader(b))
+	if err != nil {
+		panic("response wrong")
+	}
+	log.Println("Posted Agg shares to hos, code : " + resp.Status)
 }
 
 func readClientPorts(body io.ReadCloser) ([]string) {
@@ -94,14 +262,23 @@ func main() {
   } else {
     client_port = port[0]
   }
-  println("port: " + port[0])
+  // println("port: " + port[0])
   
+  // capForCom = sec / 3
+	// r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// N = r.Intn(capForCom)
+
+  dataMax = 500 / 3
+
+	rand.Seed(time.Now().UnixNano())
+	data = rand.Intn(dataMax)
+
   // Does the Setup for starting a server
   clientServer, err := clientSetup()
   if err != nil {
     panic("ClientServer failed")
   }
-  println("ClientServer up and running")
+  log.Printf("ClientServer: " + client_port + " is up and running")
 
   // This makes sure to keep listing for requests
   go listenAndServe(clientServer)
@@ -114,7 +291,7 @@ func main() {
   if status != 200 {
     panic("Connection went wrong")
   }
-  println(status)
+  //println(status)
 
   // with the hospital alive and running send client's port to it
   postPortToHospital(clientCon)
@@ -132,11 +309,11 @@ func listenAndServe(clientServer *http.Server) {
   }
 }
 
-func connectionSetup() (*http.Client, error) {
+func connectionSetup() (*http.Client) {
   // Pretty much just checks if this file exist
   cert, err := os.ReadFile("ca.crt")
   if err != nil {
-    return nil, err
+    return nil
   }
 
   // Add certs to your "key chain"
@@ -157,15 +334,13 @@ func connectionSetup() (*http.Client, error) {
   // A client now has the given tls config to use in request
   client := &http.Client{Transport: tr}
 
-  return client, nil
+  return client
 }
 
 func connection() (*http.Client, int) {
   // setup meaning, what the client is using in as configs in http request  
-  client, err := connectionSetup()
-  if err != nil {
-    log.Fatalf("Failed to create connection setup: %v", err)
-  }
+  client = connectionSetup()
+
 
   // Simple http get request, just to make sure that the hospital is running
   resp, err := client.Get(url)
@@ -182,7 +357,7 @@ func postPortToHospital(client *http.Client) {
   clientIn := clientInfo {
     Port: client_port,
   }
-  log.Printf("port: %v", clientIn)
+  //log.Printf("port: %v", clientIn)
 
   // Sadly, this is needed, you cant post without a body...
   bodyBytes, err := json.Marshal(&clientIn)
@@ -193,7 +368,6 @@ func postPortToHospital(client *http.Client) {
 
   // This post request gives the current client's port to the hospital
   resp, err := client.Post((url + "/ClientPortPost"), "string", bodyReader)
-  
   responseHandler(resp)
 }
 
@@ -207,5 +381,5 @@ func responseHandler(resp *http.Response) {
     return
   }
 
-  log.Printf("Response: %s\n", body)
+  log.Printf("Hospital: %s\n", body)
 }

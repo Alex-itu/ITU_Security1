@@ -27,8 +27,14 @@ type OtherClientPorts struct {
 	Ports []string
 }
 
+type clientShare struct {
+  Share int
+}
+
+var clientinfo = 0
 var clientPorts = []string{}
 var numClients = 0
+var countShares = 0
 
 func hospitalSetup() (*http.Server, error) {
   cert, err := tls.LoadX509KeyPair("server.crt", "server.key")
@@ -46,7 +52,7 @@ func hospitalSetup() (*http.Server, error) {
   // different endpoint does different things
   router.HandleFunc("/", connectionEstablished)
   router.HandleFunc("/ClientPortPost", handleClientPortPost)
-  router.HandleFunc("/SendShares", handleClientPortPost)
+  router.HandleFunc("/GetShares", getSharesFromClients)
 
   hospital := &http.Server{
     Addr:      ":" + hos_port,
@@ -55,6 +61,29 @@ func hospitalSetup() (*http.Server, error) {
   }
 
   return hospital, err
+}
+
+func getSharesFromClients(w http.ResponseWriter, r *http.Request) {
+  w.WriteHeader(http.StatusOK)
+  body, err := io.ReadAll(r.Body)
+		if err != nil {
+			panic("failed to readAll")
+		}
+
+		share := &clientShare{}
+		err = json.Unmarshal(body, share)
+		if err != nil {
+			panic("failed to Unmarshal")
+		}
+
+		clientinfo = clientinfo + share.Share
+		countShares++
+		log.Println("got share : " + strconv.Itoa(share.Share))
+
+		if countShares == maxClients {
+			log.Println("Got all shares, Value is : " + strconv.Itoa(clientinfo))
+		}
+		
 }
 
 func main() {
@@ -94,17 +123,17 @@ func handleClientPortPost(w http.ResponseWriter, r *http.Request) {
   log.Printf("received port from client: %s", clientPort)
   log.Printf("Current known ports: %s", clientPorts)
 
-  w.WriteHeader(http.StatusOK)
-  w.Write([]byte("Port: " + clientPort + " has been added"))
-
+  
   s1 := strconv.Itoa(maxClients)
   s2 := strconv.Itoa(numClients)
-
+  
   log.Printf("max clients is set to " + s1 + ". Current number of clients is " + s2)
   if numClients >= maxClients {
     log.Printf("Reached max clients. Sending all ports to clients")
     sendPortsToAllClients()
   }
+  w.WriteHeader(http.StatusOK)
+  w.Write([]byte("Port: " + clientPort + " has been added"))
 }
 
 func readClientPort(body io.ReadCloser) (string) {
