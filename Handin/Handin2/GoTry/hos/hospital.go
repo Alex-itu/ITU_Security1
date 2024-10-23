@@ -36,55 +36,7 @@ var clientPorts = []string{}
 var numClients = 0
 var countShares = 0
 
-func hospitalSetup() (*http.Server, error) {
-  cert, err := tls.LoadX509KeyPair("server.crt", "server.key")
-  if err != nil {
-    log.Fatalf("Failed to load X509 key pair: %v", err)
-  }
 
-  config := &tls.Config{
-    Certificates: []tls.Certificate{cert},
-  }
-
-  router := http.NewServeMux()
-
-  // these are all "listning" for request
-  // different endpoint does different things
-  router.HandleFunc("/", connectionEstablished)
-  router.HandleFunc("/ClientPortPost", handleClientPortPost)
-  router.HandleFunc("/GetShares", getSharesFromClients)
-
-  hospital := &http.Server{
-    Addr:      ":" + hos_port,
-    Handler:   router,
-    TLSConfig: config,
-  }
-
-  return hospital, err
-}
-
-func getSharesFromClients(w http.ResponseWriter, r *http.Request) {
-  w.WriteHeader(http.StatusOK)
-  body, err := io.ReadAll(r.Body)
-		if err != nil {
-			panic("failed to readAll")
-		}
-
-		share := &clientShare{}
-		err = json.Unmarshal(body, share)
-		if err != nil {
-			panic("failed to Unmarshal")
-		}
-
-		clientinfo = clientinfo + share.Share
-		countShares++
-		log.Println("got share : " + strconv.Itoa(share.Share))
-
-		if countShares == maxClients {
-			log.Println("Got all shares, Value is : " + strconv.Itoa(clientinfo))
-		}
-		
-}
 
 func main() {
   log.Printf("Listening on %s...", hos_port)
@@ -100,58 +52,11 @@ func main() {
   for {}
 }
 
-func listenAndServe(hospital *http.Server) {
-  err := hospital.ListenAndServeTLS("", "")
-  if err != nil {
-    log.Fatalf("Failed to start server: %v", err)
-  }
-}
-
-func connectionEstablished(w http.ResponseWriter, r *http.Request) {
-  w.WriteHeader(http.StatusOK)
-  w.Write([]byte("Thanks for joining the protocol, please send your port"))
-}
 
 
-// TODO: Take client's port and save it
-func handleClientPortPost(w http.ResponseWriter, r *http.Request) {
-  // gets the client port from the post request
-  clientPort := readClientPort(r.Body)
-  clientPorts = append(clientPorts, clientPort)
-  numClients++
-  
-  log.Printf("received port from client: %s", clientPort)
-  log.Printf("Current known ports: %s", clientPorts)
 
-  
-  s1 := strconv.Itoa(maxClients)
-  s2 := strconv.Itoa(numClients)
-  
-  log.Printf("max clients is set to " + s1 + ". Current number of clients is " + s2)
-  if numClients >= maxClients {
-    log.Printf("Reached max clients. Sending all ports to clients")
-    sendPortsToAllClients()
-  }
-  w.WriteHeader(http.StatusOK)
-  w.Write([]byte("Port: " + clientPort + " has been added"))
-}
 
-func readClientPort(body io.ReadCloser) (string) {
-  // not sure why, but this has to &clientInfo else I non-pointer error in unmarshaling
-  clientIn := &clientInfo{}
-
-  bodyBytes, err := io.ReadAll(body)
-  if err != nil {
-    log.Printf("Failed to read response body: %v", err)
-  }
-
-  // Takes the content of the request and puts it in clientIn
-  err = json.Unmarshal(bodyBytes, clientIn)
-  if err != nil {
-    log.Printf("Failed to Unmarshal: %v", err)
-  }
-  return clientIn.Port
-}
+// ----------------------------------- Post Request handlers -----------------------------------
 
 func sendPortsToAllClients() {
   // Pretty much just checks if this file exist
@@ -205,3 +110,132 @@ func sendPortsToAllClients() {
     }
   }
 }
+
+
+
+
+
+
+
+// ----------------------------------- Read Request handlers -----------------------------------
+
+func readClientPort(body io.ReadCloser) (string) {
+  // not sure why, but this has to &clientInfo else I non-pointer error in unmarshaling
+  clientIn := &clientInfo{}
+
+  bodyBytes, err := io.ReadAll(body)
+  if err != nil {
+    log.Printf("Failed to read response body: %v", err)
+  }
+
+  // Takes the content of the request and puts it in clientIn
+  err = json.Unmarshal(bodyBytes, clientIn)
+  if err != nil {
+    log.Printf("Failed to Unmarshal: %v", err)
+  }
+  return clientIn.Port
+}
+
+func getSharesFromClients(w http.ResponseWriter, r *http.Request) {
+  w.WriteHeader(http.StatusOK)
+  body, err := io.ReadAll(r.Body)
+		if err != nil {
+			panic("failed to readAll")
+		}
+
+		share := &clientShare{}
+		err = json.Unmarshal(body, share)
+		if err != nil {
+			panic("failed to Unmarshal")
+		}
+
+		clientinfo = clientinfo + share.Share
+		countShares++
+		log.Println("got share : " + strconv.Itoa(share.Share))
+
+		if countShares == maxClients {
+			log.Println("Got all shares, Value is : " + strconv.Itoa(clientinfo))
+		}
+		
+}
+
+
+
+
+
+
+
+
+// ----------------------------------- Server Request handlers -----------------------------------
+
+func connectionEstablished(w http.ResponseWriter, r *http.Request) {
+  w.WriteHeader(http.StatusOK)
+  w.Write([]byte("Thanks for joining the protocol, please send your port"))
+}
+
+
+// TODO: Take client's port and save it
+func handleClientPortPost(w http.ResponseWriter, r *http.Request) {
+  // gets the client port from the post request
+  clientPort := readClientPort(r.Body)
+  clientPorts = append(clientPorts, clientPort)
+  numClients++
+  
+  log.Printf("received port from client: %s", clientPort)
+  log.Printf("Current known ports: %s", clientPorts)
+
+  
+  s1 := strconv.Itoa(maxClients)
+  s2 := strconv.Itoa(numClients)
+  
+  log.Printf("max clients is set to " + s1 + ". Current number of clients is " + s2)
+  if numClients >= maxClients {
+    log.Printf("Reached max clients. Sending all ports to clients")
+    sendPortsToAllClients()
+  }
+  w.WriteHeader(http.StatusOK)
+  w.Write([]byte("Port: " + clientPort + " has been added"))
+}
+
+
+
+
+
+
+
+// ----------------------------------- Server Setup -----------------------------------
+
+func hospitalSetup() (*http.Server, error) {
+  cert, err := tls.LoadX509KeyPair("server.crt", "server.key")
+  if err != nil {
+    log.Fatalf("Failed to load X509 key pair: %v", err)
+  }
+
+  config := &tls.Config{
+    Certificates: []tls.Certificate{cert},
+  }
+
+  router := http.NewServeMux()
+
+  // these are all "listning" for request
+  // different endpoint does different things
+  router.HandleFunc("/", connectionEstablished)
+  router.HandleFunc("/ClientPortPost", handleClientPortPost)
+  router.HandleFunc("/GetShares", getSharesFromClients)
+
+  hospital := &http.Server{
+    Addr:      ":" + hos_port,
+    Handler:   router,
+    TLSConfig: config,
+  }
+
+  return hospital, err
+}
+
+func listenAndServe(hospital *http.Server) {
+  err := hospital.ListenAndServeTLS("", "")
+  if err != nil {
+    log.Fatalf("Failed to start server: %v", err)
+  }
+}
+
