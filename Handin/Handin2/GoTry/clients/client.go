@@ -28,6 +28,7 @@ type clientShare struct {
 }
 
 var mutex sync.Mutex
+//var wg sync.WaitGroup // Add WaitGroup to wait for all goroutines to finish
 
 var client_port = ""
 
@@ -42,7 +43,7 @@ var ownMadeShares []int
 
 var data int
 var dataMax int
-
+var sentShares = false
 var client *http.Client
 
 const (
@@ -90,6 +91,10 @@ func main() {
 
 	// Keep the main function alive
 	for {
+    if len(ownMadeShares) != 0 && (maxClients-1) == len(sharesFromClients) &&  sentShares == false {
+      sentShares = true
+      postAggSharesToHos()
+    }  
 	}
 }
 
@@ -119,9 +124,11 @@ func makeShares(p int, data int, amount int) []int {
 		shares = append(shares, share)
 		totalShares += share
 	}
-
+  
+  mutex.Lock()
 	shares = append(shares, data-totalShares)
-
+  mutex.Unlock()
+  
 	return shares
 }
 
@@ -132,7 +139,8 @@ func makeShares(p int, data int, amount int) []int {
 
 // As the name says, gives the client's port to hospital
 func postPortToHospital(client *http.Client) {
-	clientIn := clientInfo{
+	//wg.Add(1)
+  clientIn := clientInfo{
 		Port: client_port,
 	}
 	//log.Printf("port: %v", clientIn)
@@ -145,6 +153,7 @@ func postPortToHospital(client *http.Client) {
 	bodyReader := bytes.NewReader(bodyBytes)
 
 	// This post request gives the current client's port to the hospital
+  log.Println("Posting Port to Hospital, now waiting for all clients to finish")
 	resp, err := client.Post((urlHos + "/ClientPortPost"), "string", bodyReader)
 	responseHandler(resp)
 }
@@ -154,8 +163,9 @@ func postAggSharesToHos() {
 	log.Println("OwmMAdeShares len : " + strconv.Itoa(len(ownMadeShares)))
 	log.Println("OwmMAdeShares : " + strconv.Itoa(ownMadeShares[len(ownMadeShares)-1]))
 
+  mutex.Lock()
 	sharesFromClients = append(sharesFromClients, ownMadeShares[len(ownMadeShares)-1])
-
+  mutex.Unlock() 
 	var aggregateShare int
 
 	for _, share := range sharesFromClients {
@@ -284,20 +294,20 @@ func hospitalPostsAllPort(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("" + client_port + " : Got all the ports"))
+  //wg.Done() // Signal that this client is done
 }
 
 func GetShareFromClients(w http.ResponseWriter, r *http.Request) {
-	mutex.Lock()
 	share := readSharePost(r.Body)
-	mutex.Unlock()
 
 	log.Printf("Got share: %v", share)
 
 	log.Println("sharesFromClients len : " + strconv.Itoa(len(sharesFromClients)))
 
-	if len(ownMadeShares) != 0 && (maxClients-1) == len(sharesFromClients) {
-		postAggSharesToHos()
-	}
+  //wg.Wait() // Wait for all clients to finish their shares
+	// if len(ownMadeShares) != 0 && (maxClients-1) == len(sharesFromClients) {
+	// 	postAggSharesToHos()
+	// }
 
 	w.WriteHeader(http.StatusOK)
 }

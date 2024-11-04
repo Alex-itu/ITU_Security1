@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+  "sync"
 	"strconv"
 )
 
@@ -36,6 +37,7 @@ var clientPorts = []string{}
 var numClients = 0
 var countShares = 0
 
+var mutex sync.Mutex
 
 
 func main() {
@@ -98,7 +100,8 @@ func sendPortsToAllClients() {
     
     bodyBytes, err := json.Marshal(&ports)
     if err != nil {
-      log.Fatal(err)
+      log.Printf("Error marshaling ports for client %s: %v", elem, err)
+      continue // Skip to the next client
     }
 
     bodyReader := bytes.NewReader(bodyBytes)
@@ -107,7 +110,16 @@ func sendPortsToAllClients() {
     resp, err := client.Post((url + elem + "/GetClientsPorts"), "string", bodyReader)
     if err != nil || resp.StatusCode != 200{
       log.Printf("Failed to get response: %v", err)
+      continue // Skip to the next client
     }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+      log.Printf("Unexpected status code from client %s: %d", elem, resp.StatusCode)
+      continue // Skip to the next client
+    }
+
+    log.Printf("Successfully posted to client %s", elem)
   }
 }
 
@@ -149,8 +161,11 @@ func getSharesFromClients(w http.ResponseWriter, r *http.Request) {
 			panic("failed to Unmarshal")
 		}
 
+    mutex.Lock()
 		clientinfo = clientinfo + share.Share
 		countShares++
+    mutex.Unlock()
+    
 		log.Println("got share : " + strconv.Itoa(share.Share))
 
 		if countShares == maxClients {
@@ -178,7 +193,11 @@ func connectionEstablished(w http.ResponseWriter, r *http.Request) {
 func handleClientPortPost(w http.ResponseWriter, r *http.Request) {
   // gets the client port from the post request
   clientPort := readClientPort(r.Body)
+  
+  mutex.Lock()
   clientPorts = append(clientPorts, clientPort)
+  mutex.Unlock()
+
   numClients++
   
   log.Printf("received port from client: %s", clientPort)
