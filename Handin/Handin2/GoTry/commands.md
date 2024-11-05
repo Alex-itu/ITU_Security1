@@ -10,9 +10,6 @@ openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key \
   -CAcreateserial -out server.crt -days 365 -sha256 -extfile server.cnf -extensions v3_ext
 
 
-
-
-
 Running program
 -- server
 go run ./hos/hospital.go
